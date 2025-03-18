@@ -16,6 +16,7 @@ class BlackjackCounterGUI:
         self.accent_color = "#4CAF50"  # Green accent
         self.warning_color = "#F44336"  # Red warning
         self.neutral_color = "#9E9E9E"  # Gray neutral
+        self.first_card_color = "#00BFFF"  # Azzurro per la prima carta di ogni mano
         
         # Configure style
         style = ttk.Style()
@@ -31,6 +32,8 @@ class BlackjackCounterGUI:
         # Card history
         self.card_history = []
         self.current_hand_cards = []  # Cards in the current hand
+        self.total_cards_used = 0  # Contatore per il totale delle carte inserite
+        self.decks_used = 0  # Contatore per i mazzi utilizzati
         
         # Budget tracking
         self.initial_budget = 0
@@ -161,6 +164,11 @@ class BlackjackCounterGUI:
         self.running_count_var = tk.StringVar(value="0")
         ttk.Label(stats_frame, textvariable=self.running_count_var, font=("Arial", 12, "bold")).grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         
+        # Carte inserite
+        ttk.Label(stats_frame, text="Carte Inserite:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        self.cards_used_var = tk.StringVar(value="0")
+        ttk.Label(stats_frame, textvariable=self.cards_used_var, font=("Arial", 12, "bold")).grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
+        
         # True count
         ttk.Label(stats_frame, text="True Count:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.true_count_var = tk.StringVar(value="0.00")
@@ -190,6 +198,11 @@ class BlackjackCounterGUI:
         self.decks_var = tk.StringVar(value="6")
         ttk.Entry(self.decks_frame, textvariable=self.decks_var, width=5).pack(side=tk.LEFT, padx=2)
         ttk.Button(self.decks_frame, text="Update", command=self.update_decks).pack(side=tk.LEFT, padx=2)
+        
+        # Mazzi utilizzati
+        ttk.Label(stats_frame, text="Mazzi Utilizzati:").grid(row=4, column=2, sticky=tk.W, padx=5, pady=5)
+        self.decks_used_var = tk.StringVar(value="0.00")
+        ttk.Label(stats_frame, textvariable=self.decks_used_var, font=("Arial", 12, "bold")).grid(row=4, column=3, sticky=tk.W, padx=5, pady=5)
         
         # Session statistics
         ttk.Label(stats_frame, text="Hands Played:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
@@ -229,6 +242,10 @@ class BlackjackCounterGUI:
         # Initialize empty trend data
         self.count_trend = []
         
+        # Version label
+        version_label = ttk.Label(self.root, text="v 1.2", foreground=self.neutral_color, font=("Arial", 8))
+        version_label.pack(side=tk.BOTTOM, anchor=tk.SE, padx=5, pady=2)
+        
         # Key bindings for card input
         self.setup_key_bindings()
     
@@ -257,6 +274,12 @@ class BlackjackCounterGUI:
         self.card_history.append(card)
         self.current_hand_cards.append(card)  # Add to current hand
         
+        # Incrementa il contatore delle carte usate
+        self.total_cards_used += 1
+        
+        # Aggiorna il contatore dei mazzi utilizzati (52 carte per mazzo)
+        self.decks_used = self.total_cards_used / 52
+        
         # Add to count trend
         self.count_trend.append(self.counter.get_count())
         
@@ -272,6 +295,8 @@ class BlackjackCounterGUI:
         self.card_history = []
         self.current_hand_cards = []
         self.count_trend = []
+        self.total_cards_used = 0
+        self.decks_used = 0
         
         # Update UI
         self.update_statistics()
@@ -303,13 +328,22 @@ class BlackjackCounterGUI:
             fill="#9E9E9E", dash=(4, 2)
         )
         
-        # Calculate scaling factors
+        # Calculate scaling factors - DYNAMIC SCALING
+        padding = 2  # Aggiungi un padding per evitare che i punti tocchino i bordi
         max_count = max(max(self.count_trend, default=0), 1)
         min_count = min(min(self.count_trend, default=0), -1)
         
-        # Ensure we have at least a range of -5 to 5 for scaling
-        max_count = max(max_count, 5)
-        min_count = min(min_count, -5)
+        # Assicurati che ci sia sempre un range minimo per evitare scaling eccessivo
+        range_min = 5
+        if max_count - min_count < range_min:
+            # Espandi il range mantenendo il centro
+            center = (max_count + min_count) / 2
+            max_count = center + range_min / 2
+            min_count = center - range_min / 2
+        
+        # Aggiungi padding per evitare che i punti tocchino i bordi
+        max_count += padding
+        min_count -= padding
         
         # Calculate vertical scaling
         y_scale = (height - 20) / (max_count - min_count)
@@ -319,12 +353,26 @@ class BlackjackCounterGUI:
         if len(self.count_trend) > 1:
             x_scale = width / (len(self.count_trend) - 1)
         
+        # Trova gli indici delle prime carte di ogni mano
+        first_card_indices = []
+        hand_start_idx = 0
+        
+        # Aggiungi l'indice della prima carta della mano corrente
+        if self.current_hand_cards and len(self.current_hand_cards) == 1 and len(self.count_trend) > 0:
+            first_card_indices.append(len(self.count_trend) - 1)
+        
+        # Aggiungi gli indici delle prime carte delle mani precedenti
+        for hand in self.hand_history:
+            if 'first_card_index' in hand and hand['first_card_index'] < len(self.count_trend):
+                first_card_indices.append(hand['first_card_index'])
+        
         # Draw trend line
         points = []
         for i, count in enumerate(self.count_trend):
             x = i * x_scale
-            # Invert y-coordinate (0,0 is top-left in canvas)
-            y = height // 2 - (count * y_scale)
+            # Calcola la posizione y in base al range dinamico
+            # Nota: invertiamo le coordinate y (0,0 è in alto a sinistra nel canvas)
+            y = height - ((count - min_count) * y_scale + 10)
             points.extend([x, y])
         
         # Draw line if we have at least 2 points
@@ -336,17 +384,33 @@ class BlackjackCounterGUI:
         # Draw points
         for i in range(0, len(points), 2):
             x, y = points[i], points[i+1]
-            color = "#4CAF50" if self.count_trend[i//2] >= 0 else "#F44336"
+            point_idx = i // 2
+            
+            # Determina il colore del punto
+            if point_idx in first_card_indices:
+                # Prima carta di una mano - colore azzurro
+                color = self.first_card_color
+            else:
+                # Altre carte - verde se positivo, rosso se negativo
+                color = "#4CAF50" if self.count_trend[point_idx] >= 0 else "#F44336"
+            
             self.trend_canvas.create_oval(
                 x-3, y-3, x+3, y+3, fill=color, outline=""
             )
         
-        # Draw current count
+        # Draw current count and range
         current_count = self.count_trend[-1] if self.count_trend else 0
         self.trend_canvas.create_text(
             width - 10, 10, 
             text=f"Current: {current_count}", 
             fill="#FFFFFF", anchor="ne"
+        )
+        
+        # Mostra il range del grafico
+        self.trend_canvas.create_text(
+            10, 10,
+            text=f"Range: {min_count:.1f} to {max_count:.1f}",
+            fill="#FFFFFF", anchor="nw"
         )
     
     def reset_session(self):
@@ -405,13 +469,19 @@ class BlackjackCounterGUI:
                 self.session_results.append(0)
                 result_text = "Push: 0.00"
             
+            # Calcola l'indice della prima carta della mano corrente
+            # Se abbiamo carte nella mano corrente, l'indice della prima carta è
+            # la lunghezza del count_trend meno il numero di carte nella mano corrente
+            first_card_index = len(self.count_trend) - len(self.current_hand_cards) if self.current_hand_cards else None
+            
             # Store hand information
             hand_info = {
                 'hand_number': self.hands_played,
                 'cards': self.current_hand_cards.copy(),
                 'result': result,
                 'bet_amount': bet_amount,
-                'result_text': result_text
+                'result_text': result_text,
+                'first_card_index': first_card_index
             }
             self.hand_history.append(hand_info)
             
@@ -510,6 +580,10 @@ class BlackjackCounterGUI:
             self.deck_status_label.config(foreground="black")
         
         self.deck_status_var.set(status)
+        
+        # Aggiorna i contatori delle carte e dei mazzi
+        self.cards_used_var.set(str(self.total_cards_used))
+        self.decks_used_var.set(f"{self.decks_used:.2f}")
         
         # Update betting recommendation
         if self.initial_budget > 0:

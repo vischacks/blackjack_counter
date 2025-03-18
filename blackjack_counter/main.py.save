@@ -1,0 +1,144 @@
+import cv2
+import numpy as np
+import time
+import pytesseract
+from mss import mss
+from PIL import Image
+from card_counter import CardCounter
+from screen_analyzer import ScreenAnalyzer
+import sys
+from collections import deque
+
+def main():
+    # Inizializza il contatore di carte
+    counter = CardCounter()
+    
+    # Inizializza l'analizzatore dello schermo
+    screen_analyzer = ScreenAnalyzer()
+    
+    # Configura la regione dello schermo da catturare
+    # Questi valori dovranno essere regolati in base al tuo layout specifico
+    monitor = {"top": 100, "left": 100, "width": 800, "height": 600}
+    
+    # Storico delle carte (ultime 20)
+    card_history = deque(maxlen=20)
+    
+    # Crea una finestra per l'interfaccia utente
+    cv2.namedWindow("Blackjack Counter", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Blackjack Counter", 1000, 700)
+    
+    print("Avvio del contatore di carte per Blackjack...")
+    print("Comandi:")
+    print("  'q' - Esci dal programma")
+    print("  's' - Ferma il programma")
+    print("  'r' - Resetta il conteggio (dopo mescolamento)")
+    
+    running = True
+    
+    with mss() as sct:
+        while running:
+            try:
+                # Cattura lo schermo
+                screenshot = sct.grab(monitor)
+                img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+                img_np = np.array(img)
+                
+                # Converti in scala di grigi per un migliore riconoscimento
+                img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+                
+                # Analizza lo schermo per trovare le carte
+                cards = screen_analyzer.detect_cards(img_gray)
+                
+                # Aggiorna il conteggio e lo storico
+                for card in cards:
+                    counter.update_count(card)
+                    card_history.append(card)
+                    print(f"Carta rilevata: {card}")
+                
+                # Crea un'immagine per l'interfaccia utente
+                ui_img = np.zeros((700, 1000, 3), dtype=np.uint8)
+                
+                # Copia l'immagine catturata in alto a sinistra
+                h, w = img_np.shape[:2]
+                ui_img[50:50+h, 50:50+w] = img_np
+                
+                # Aggiungi informazioni sul conteggio
+                count = counter.get_count()
+                true_count = counter.get_true_count()
+                
+                # Determina lo stato del mazzo
+                deck_status = "NEUTRO"
+                text_color = (200, 200, 200)  # Grigio per neutro
+                
+                if true_count >= 2:
+                    deck_status = "CALDO"
+                    text_color = (0, 255, 0)  # Verde per caldo
+                elif true_count <= -2:
+                    deck_status = "SCARICO"
+                    text_color = (0, 0, 255)  # Rosso per scarico
+                
+                # Aggiungi testo informativo
+                cv2.putText(ui_img, f"Running Count: {count}", (w + 100, 100), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                cv2.putText(ui_img, f"True Count: {true_count:.2f}", (w + 100, 150), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                cv2.putText(ui_img, f"Stato Mazzo: {deck_status}", (w + 100, 200), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, text_color, 2)
+                cv2.putText(ui_img, f"Mazzi Rimanenti: {counter.decks_remaining:.1f}", (w + 100, 250), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                
+                # Mostra lo storico delle carte
+                cv2.putText(ui_img, "Storico Carte:", (50, h + 100), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                
+                # Visualizza le ultime carte rilevate
+                history_text = ", ".join(list(card_history))
+                # Dividi il testo in righe se è troppo lungo
+                max_chars_per_line = 40
+                for i in range(0, len(history_text), max_chars_per_line):
+                    line = history_text[i:i+max_chars_per_line]
+                    y_pos = h + 140 + (i // max_chars_per_line) * 30
+                    cv2.putText(ui_img, line, (50, y_pos), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
+                
+                # Aggiungi istruzioni
+                cv2.putText(ui_img, "Comandi: q = Esci | s = Ferma | r = Reset Conteggio", 
+                            (50, ui_img.shape[0] - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 1)
+                
+                # Mostra l'interfaccia utente
+                cv2.imshow("Blackjack Counter", ui_img)
+                
+                # Gestione dei tasti
+                key = cv2.waitKey(25) & 0xFF
+                if key == ord('q'):
+                    # Esci premendo 'q'
+                    cv2.destroyAllWindows()
+                    break
+                elif key == ord('s'):
+                    # Ferma il programma premendo 's'
+                    print("Programma fermato. Premi 'q' per uscire completamente.")
+                    running = False
+                elif key == ord('r'):
+                    # Resetta il conteggio premendo 'r'
+                    counter = CardCounter()
+                    card_history.clear()
+                    print("Conteggio resettato - Nuovo mazzo.")
+                
+                # Pausa per non sovraccaricare la CPU
+                time.sleep(0.5)
+                
+            except KeyboardInterrupt:
+                print("\nProgramma interrotto dall'utente.")
+                cv2.destroyAllWindows()
+                sys.exit(0)
+            except Exception as e:
+                print(f"Si è verificato un errore: {e}")
+                cv2.destroyAllWindows()
+                sys.exit(1)
+    
+    print("Programma terminato.")
+
+if __name__ == "__main__":
+    main()
+/usr/local/bin/python3 /Users/giacomoviscardi/blackjack_counter/blackjack_counter/main.py
+
