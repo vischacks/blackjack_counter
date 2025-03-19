@@ -35,6 +35,13 @@ class BlackjackCounterGUI:
         self.total_cards_used = 0  # Contatore per il totale delle carte inserite
         self.decks_used = 0  # Contatore per i mazzi utilizzati
         
+        # Card type counter - tracks how many of each card type have been played
+        self.card_type_counter = {
+            'A': 0, '2': 0, '3': 0, '4': 0, '5': 0,
+            '6': 0, '7': 0, '8': 0, '9': 0, '10': 0,
+            'J': 0, 'Q': 0, 'K': 0
+        }
+        
         # Budget tracking
         self.initial_budget = 0
         self.current_budget = 0
@@ -118,6 +125,22 @@ class BlackjackCounterGUI:
             if col > 4:  # 5 buttons per row
                 col = 0
                 row += 1
+        
+        # Card type counter frame - Moved here from right panel
+        card_counter_frame = ttk.LabelFrame(card_frame, text="Card Type Counts", padding="5")
+        card_counter_frame.grid(row=row+1, column=0, columnspan=5, sticky=tk.W+tk.E, padx=5, pady=10)
+        
+        # Create a grid for card counts
+        self.card_count_labels = {}
+        count_row, count_col = 0, 0
+        for card in ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']:
+            ttk.Label(card_counter_frame, text=f"{card}:").grid(row=count_row, column=count_col*2, sticky=tk.W, padx=5, pady=2)
+            self.card_count_labels[card] = tk.StringVar(value="0")
+            ttk.Label(card_counter_frame, textvariable=self.card_count_labels[card]).grid(row=count_row, column=count_col*2+1, sticky=tk.W, padx=5, pady=2)
+            count_col += 1
+            if count_col > 4:  # 5 cards per row
+                count_col = 0
+                count_row += 1
         
         # Hand result tracking frame
         hand_frame = ttk.LabelFrame(left_panel, text="Hand Result Tracking", padding="5")
@@ -218,32 +241,32 @@ class BlackjackCounterGUI:
         self.profit_label = ttk.Label(stats_frame, textvariable=self.profit_var, font=("Arial", 12, "bold"))
         self.profit_label.grid(row=7, column=1, sticky=tk.W, padx=5, pady=5)
         
-        # Card history frame
-        history_frame = ttk.LabelFrame(right_panel, text="Card History", padding="5")
-        history_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # Scrollable history text
-        self.history_text = tk.Text(history_frame, width=30, height=15, wrap=tk.WORD, bg="#2D2D2D", fg="#FFFFFF")
-        self.history_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        scrollbar = ttk.Scrollbar(history_frame, orient="vertical", command=self.history_text.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.history_text.configure(yscrollcommand=scrollbar.set)
-        self.history_text.config(state=tk.DISABLED)
-        
-        # Count trend graph frame
-        trend_frame = ttk.LabelFrame(right_panel, text="Count Trend", padding="5")
-        trend_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # Canvas for drawing the trend graph
-        self.trend_canvas = tk.Canvas(trend_frame, bg="#2D2D2D", height=150)
-        self.trend_canvas.pack(fill=tk.BOTH, expand=True)
-        
         # Initialize empty trend data
         self.count_trend = []
         
-        # Version label
-        version_label = ttk.Label(self.root, text="v 1.2", foreground=self.neutral_color, font=("Arial", 8))
+        # History frame
+        history_frame = ttk.LabelFrame(right_panel, text="Hand History", padding="5")
+        history_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Create text widget for history
+        self.history_text = tk.Text(history_frame, width=40, height=10, bg=self.bg_color, fg=self.text_color)
+        self.history_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Add scrollbar to history text
+        history_scrollbar = ttk.Scrollbar(self.history_text, command=self.history_text.yview)
+        history_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.history_text.config(yscrollcommand=history_scrollbar.set)
+        
+        # Trend graph frame
+        trend_frame = ttk.LabelFrame(right_panel, text="Count Trend", padding="5")
+        trend_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Create canvas for trend graph
+        self.trend_canvas = tk.Canvas(trend_frame, bg=self.bg_color, height=150)
+        self.trend_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Version label (only one instance)
+        version_label = ttk.Label(self.root, text="v 1.3", foreground=self.neutral_color, font=("Arial", 8))
         version_label.pack(side=tk.BOTTOM, anchor=tk.SE, padx=5, pady=2)
         
         # Key bindings for card input
@@ -280,6 +303,10 @@ class BlackjackCounterGUI:
         # Aggiorna il contatore dei mazzi utilizzati (52 carte per mazzo)
         self.decks_used = self.total_cards_used / 52
         
+        # Update card type counter
+        if card in self.card_type_counter:
+            self.card_type_counter[card] += 1
+        
         # Add to count trend
         self.count_trend.append(self.counter.get_count())
         
@@ -297,6 +324,10 @@ class BlackjackCounterGUI:
         self.count_trend = []
         self.total_cards_used = 0
         self.decks_used = 0
+        
+        # Reset card type counter
+        for card in self.card_type_counter:
+            self.card_type_counter[card] = 0
         
         # Update UI
         self.update_statistics()
@@ -363,7 +394,7 @@ class BlackjackCounterGUI:
         
         # Aggiungi gli indici delle prime carte delle mani precedenti
         for hand in self.hand_history:
-            if 'first_card_index' in hand and hand['first_card_index'] < len(self.count_trend):
+            if 'first_card_index' in hand and hand['first_card_index'] is not None and hand['first_card_index'] < len(self.count_trend):
                 first_card_indices.append(hand['first_card_index'])
         
         # Draw trend line
@@ -585,6 +616,10 @@ class BlackjackCounterGUI:
         self.cards_used_var.set(str(self.total_cards_used))
         self.decks_used_var.set(f"{self.decks_used:.2f}")
         
+        # Update card type counter display
+        for card, count in self.card_type_counter.items():
+            self.card_count_labels[card].set(str(count))
+        
         # Update betting recommendation
         if self.initial_budget > 0:
             self.update_bet_recommendation(true_count)
@@ -696,11 +731,14 @@ class BlackjackCounterGUI:
         # Clear current content
         self.history_text.delete(1.0, tk.END)
         
-        # Display current hand cards first
+        # Display current hand cards first in reverse order (newest first)
         if self.current_hand_cards:
             self.history_text.insert(tk.END, "Current Hand:\n")
-            for i, card in enumerate(self.current_hand_cards):
-                self.history_text.insert(tk.END, f"  {i+1}. {card}\n")
+            # Reverse the order so newest card is at the top
+            for i, card in enumerate(reversed(self.current_hand_cards)):
+                # Maintain original card numbering but display in reverse
+                card_num = len(self.current_hand_cards) - i
+                self.history_text.insert(tk.END, f"  {card_num}. {card}\n")
             self.history_text.insert(tk.END, "\n")
         
         # Display completed hands with cards and results
@@ -716,6 +754,9 @@ class BlackjackCounterGUI:
         elif not self.current_hand_cards:
             self.history_text.insert(tk.END, "No cards yet.")
         
+        # Scroll to the beginning to show the most recent card
+        self.history_text.see("1.0")
+        
         # Disable editing
         self.history_text.config(state=tk.DISABLED)
     
@@ -728,6 +769,9 @@ class BlackjackCounterGUI:
         
         # Scroll to the beginning
         self.history_text.see(1.0)
+        
+        # Scroll to the beginning to show the most recent card
+        self.history_text.see("1.0")
         
         # Disable editing
         self.history_text.config(state=tk.DISABLED)
